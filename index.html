@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Middle blocker reading game for volleyball blocking decisions." />
+  <title>Middle Blocker Reading Lab</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">VOLLEYBALL BLOCK TRAINING</p>
+        <h1>Middle Blocker Reading Lab</h1>
+        <p class="subtitle">先讀接發、舉球員與攻擊手，再決定往哪裡攔。不要猜球。</p>
+      </div>
+      <button id="startBtn" class="primary-btn" type="button">開始訓練</button>
+    </header>
+
+    <section class="controls card" aria-label="訓練設定">
+      <label>
+        <span>難度</span>
+        <select id="difficulty">
+          <option value="beginner">初階｜1.8 秒</option>
+          <option value="intermediate" selected>中階｜1.1 秒</option>
+          <option value="advanced">進階｜0.7 秒</option>
+        </select>
+      </label>
+      <label>
+        <span>回合數</span>
+        <select id="roundCount">
+          <option value="10" selected>10 球</option>
+          <option value="20">20 球</option>
+          <option value="30">30 球</option>
+        </select>
+      </label>
+      <div class="legend" aria-label="按鍵說明">
+        <span><kbd>←</kbd> 4 號位</span>
+        <span><kbd>↓</kbd> 留中間</span>
+        <span><kbd>→</kbd> 2 號位</span>
+      </div>
+    </section>
+
+    <section class="stats" aria-label="訓練統計">
+      <article class="stat card"><span>Round</span><strong id="roundStat">0 / 10</strong></article>
+      <article class="stat card"><span>Accuracy</span><strong id="accuracyStat">—</strong></article>
+      <article class="stat card"><span>Avg RT</span><strong id="rtStat">—</strong></article>
+      <article class="stat card"><span>Streak</span><strong id="streakStat">0</strong></article>
+    </section>
+
+    <section class="game-layout">
+      <div class="court-card card">
+        <div class="round-info">
+          <div>
+            <span class="info-label">接發品質</span>
+            <strong id="passQuality">等待開始</strong>
+          </div>
+          <div>
+            <span class="info-label">你的任務</span>
+            <strong id="decisionPrompt">讀取後再移動</strong>
+          </div>
+          <div class="timer-wrap" aria-label="反應時間">
+            <span class="info-label">Decision window</span>
+            <strong id="timerText">—</strong>
+          </div>
+        </div>
+
+        <div id="court" class="court" aria-label="排球攔網判斷場景">
+          <div class="court-zone zone-left"><span>4 號位</span></div>
+          <div class="court-zone zone-mid"><span>快攻</span></div>
+          <div class="court-zone zone-right"><span>2 號位</span></div>
+          <div class="attack-line"></div>
+          <div class="net"><span>NET</span></div>
+
+          <div id="oh" class="player opponent player-oh" aria-label="對方主攻">
+            <span class="jersey">OH</span><small>主攻</small>
+          </div>
+          <div id="mb" class="player opponent player-mb" aria-label="對方攔中">
+            <span class="jersey">MB</span><small>快攻</small>
+          </div>
+          <div id="opp" class="player opponent player-opp" aria-label="對方舉對">
+            <span class="jersey">OPP</span><small>舉對</small>
+          </div>
+          <div id="setter" class="player setter" aria-label="對方舉球員">
+            <span class="jersey">S</span><small>舉球</small>
+          </div>
+          <div id="you" class="player you" aria-label="你">
+            <span class="jersey">YOU</span><small>Middle</small>
+          </div>
+          <div id="ball" class="ball" aria-label="排球"></div>
+          <svg id="setPath" class="set-path" viewBox="0 0 1000 600" aria-hidden="true">
+            <path id="setCurve" d="" />
+          </svg>
+
+          <div id="readyOverlay" class="ready-overlay">
+            <strong>準備讀球</strong>
+            <span>觀察接發品質 → 舉球員 → 攻擊手助跑</span>
+          </div>
+        </div>
+
+        <div id="feedback" class="feedback" aria-live="polite">
+          按「開始訓練」進入第一球。
+        </div>
+
+        <div class="decision-buttons" aria-label="攔網選擇">
+          <button type="button" class="decision-btn" data-choice="left">
+            <kbd>←</kbd><span>往 4 號位</span>
+          </button>
+          <button type="button" class="decision-btn" data-choice="middle">
+            <kbd>↓</kbd><span>留中間</span>
+          </button>
+          <button type="button" class="decision-btn" data-choice="right">
+            <kbd>→</kbd><span>往 2 號位</span>
+          </button>
+        </div>
+      </div>
+
+      <aside class="coach card">
+        <p class="eyebrow">COACH CUE</p>
+        <h2 id="coachTitle">先讀，再動</h2>
+        <p id="coachText">
+          中間攔網最容易犯的錯不是「移動太慢」，而是太早猜。先用接發品質排除選項，再讀舉球員與攻擊手。
+        </p>
+        <div class="cue-list">
+          <div><span>1</span><p><strong>Pass</strong>：到位球，快攻威脅最高。</p></div>
+          <div><span>2</span><p><strong>Setter</strong>：身體與出手只是線索，不是答案。</p></div>
+          <div><span>3</span><p><strong>Hitter</strong>：看助跑節奏與起跳時間。</p></div>
+        </div>
+        <div id="sessionResult" class="session-result hidden"></div>
+      </aside>
+    </section>
+
+    <footer>
+      <p>目標：建立 read block 的決策速度，而不是練「猜中」。</p>
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -63,7 +63,9 @@ function makePlayer(label,color){
   const rLeg=lLeg.clone();rLeg.position.x=.16;root.add(rLeg);
   const leftArm=new THREE.Mesh(new THREE.CylinderGeometry(.075,.095,.72,10),skin);leftArm.position.set(-.42,1.35,0);leftArm.rotation.z=-.25;root.add(leftArm);
   const rightArm=leftArm.clone();rightArm.position.x=.42;rightArm.rotation.z=.25;root.add(rightArm);
-  root.userData={body,head,leftArm,rightArm,label,baseX:0,baseZ:0,phase:0};
+  const leftHand=new THREE.Mesh(new THREE.BoxGeometry(.16,.18,.12),skin);leftHand.position.set(-.42,.96,0);root.add(leftHand);
+  const rightHand=leftHand.clone();rightHand.position.x=.42;root.add(rightHand);
+  root.userData={body,head,leftArm,rightArm,leftHand,rightHand,label,baseX:0,baseZ:0,phase:0};
   return root;
 }
 const oh=makePlayer("OH",0x6c7fd0),mb=makePlayer("MB",0x6c7fd0),opp=makePlayer("OPP",0x6c7fd0),setter=makePlayer("S",0xf2cf63),you=makePlayer("YOU",0x58d2a4);
@@ -73,7 +75,7 @@ oh.position.set(-3.0,0,-7.2);mb.position.set(0,0,-6.3);opp.position.set(3.0,0,-7
 const ball=new THREE.Mesh(new THREE.SphereGeometry(.18,20,14),new THREE.MeshStandardMaterial({color:0xf8f6df,roughness:.55}));
 ball.position.set(.2,2.4,-4.1);ball.castShadow=true;scene.add(ball);
 
-let anim={t:0,phase:"idle",target:"middle",fake:"none",decoy:"none",pass:"A",releaseT:0};
+let anim={t:0,phase:"idle",target:"middle",fake:"none",decoy:"none",pass:"A",releaseT:0,commitX:0};
 
 function resize(){
   const rect=canvas.getBoundingClientRect();
@@ -85,9 +87,9 @@ function resize(){
 function lerp(a,b,t){return a+(b-a)*t}
 function smooth(t){return t*t*(3-2*t)}
 function resetPlayers(){
-  for(const p of [oh,mb,opp,setter,you]){
+  for(const p of [oh,mb,opp,setter]){
     p.position.x=p.userData.baseX;p.position.z=p.userData.baseZ;p.position.y=0;p.rotation.set(0,0,0);
-    p.userData.head.rotation.set(0,0,0);p.userData.leftArm.rotation.set(0,0,-.25);p.userData.rightArm.rotation.set(0,0,.25);
+    p.userData.head.rotation.set(0,0,0);p.userData.leftArm.rotation.set(0,0,-.25);p.userData.rightArm.rotation.set(0,0,.25);p.userData.leftHand.rotation.set(0,0,0);p.userData.rightHand.rotation.set(0,0,0);
   }
   ball.position.set(.2,2.4,-4.1);
 }
@@ -101,6 +103,9 @@ function animateScene(dt){
   const t=anim.t;
   if(anim.phase==="reading"){
     const cue=Math.min(1,t/1.0);
+    const sc=state.scenario||{};
+    const jumpP=Math.max(0,Math.min(1,(t-.28)/.62));
+    setter.position.y=(sc.jumpSet?0.62:0.12)*Math.sin(Math.PI*jumpP);
     // all attackers show credible movement
     approach(oh,.35,1.45,cue,0);
     approach(mb,anim.target==="middle"?.2:.08,1.8,cue,0);
@@ -155,7 +160,10 @@ function createScenario(){
     const d=["left","middle","right"].filter(x=>x!==target && !(pass==="C"&&x==="middle"));
     decoy=d[Math.floor(Math.random()*d.length)]||"none";
   }
-  return {pass,target,fake,decoy};
+  const quickRoute=["A","B","C"][Math.floor(Math.random()*3)];
+  const sx=pass==="A"?(Math.random()-.5)*.5:(Math.random()-.5)*(pass==="B"?1.0:1.6);
+  const ohShift=(Math.random()-.5)*1.0, oppShift=(Math.random()-.5)*1.0, mbShift=(Math.random()-.5)*.8;
+  return {pass,target,fake,decoy,quickRoute,sx,ohShift,oppShift,mbShift,jumpSet:pass!=="C"||Math.random()<.45};
 }
 function updateStats(){
   el("roundStat").textContent=`${state.round} / ${state.total}`;
@@ -177,8 +185,8 @@ function nextRound(){
   anim.target=sc.target;anim.fake=sc.fake;anim.decoy=sc.decoy;anim.pass=sc.pass;
   el("passLabel").textContent=sc.pass==="A"?"A｜到位":sc.pass==="B"?"B｜稍離網":"C｜離網";
   el("phaseLabel").textContent="Read cues";el("windowLabel").textContent=`${cfgs[difficulty.value].windowMs} ms`;
-  el("centerCue").textContent="讀 Pass → Setter → Hitter";
-  el("feedback").className="feedback";el("feedback").textContent="所有攻擊手都可能動；不要把第一個動作當成答案。";
+  el("centerCue").textContent="看相對位置 → 跳舉 → 手腕";
+  el("feedback").className="feedback";el("feedback").textContent="相機就是你的眼睛；看 setter 是否跳舉、最後手腕平面，以及 OH / MB / OPP 的相對位置變化。";
   infoForScenario(sc);
   const c=cfgs[difficulty.value];
   addTimer(()=>{
@@ -210,6 +218,7 @@ function submit(choice){
     :`${choice===null?"時間到":"被假線索帶走"}：正解 ${labels[state.target]} ${rt?`· ${rt} ms`:""}`;
   el("phaseLabel").textContent="Release";
   el("centerCue").textContent=state.scenario.fake!=="none"?`Setter 假線索：${labels[state.scenario.fake]}`:"沒有明顯假肩";
+  anim.commitX=choice==="left"?-1.0:choice==="right"?1.0:0;
   anim.phase="release";anim.releaseT=anim.t;
   updateStats();
   addTimer(nextRound,1100);

@@ -1,40 +1,45 @@
 # Volleyball Block — Middle Blocker Reading Lab
 
-一個給排球中間攔網手使用的視覺判斷訓練小遊戲。
+瀏覽器版排球中間攔網視覺判斷訓練。
 
-## 訓練目標
+## v0.2 — 3D deception mode
 
-不是訓練「猜球」，而是練習：
+這一版從平面提示式 UI 改成 WebGL / Three.js 的 3D 球場視角。
 
-1. 先讀接發品質
-2. 再讀舉球員
-3. 同時看攻擊手助跑
-4. 做出第一步攔網決策
+核心改動：
+
+- 第一人稱 / blocker 視角的 3D 球場
+- Setter 頭部、肩膀與身體方向可以是假線索
+- 非目標攻擊手也會做誘餌助跑
+- 到位球時，中間快攻會持續牽制，即使最後舉到兩側
+- 太早 commit 即使猜對也只拿低分
+- 正確率之外，另外計算 read score 與 reaction time
+- 欺騙強度可調
 
 ## 操作
 
-- ←：往 4 號位
-- ↓：留中間攔快攻
-- →：往 2 號位
+- ←：封 4 號位
+- ↓：守 Quick
+- →：封 2 號位
 
-支援滑鼠 / 觸控按鈕與鍵盤方向鍵。
-
-## 難度
-
-- Beginner：1.8 秒
-- Intermediate：1.1 秒
-- Advanced：0.7 秒
+支援鍵盤與觸控按鈕。
 
 ## 技術
 
-純 HTML / CSS / JavaScript，無框架、無後端，可直接部署至 GitHub Pages。
+- HTML / CSS / JavaScript
+- Three.js (ES module CDN)
+- GitHub Pages
+
+## 訓練原則
+
+目標不是看到球飛出去才反應，也不是用固定 cue 猜球；而是把 Pass → Setter → Hitter 的資訊整合成較晚、較可靠的攔網決策。
 
 ## Roadmap
 
-- [ ] 加入 A / B / C 快攻路線
-- [ ] 加入 pipe / back-row threat
-- [ ] 加入 setter 前後排與攻擊點限制
-- [ ] 更真實的攻擊手助跑動畫
-- [ ] 依判斷時間給分，而不是只有正誤
-- [ ] 儲存歷史訓練紀錄
-- [ ] 影片式 read-block drills
+- [ ] A / B / C quick 的獨立路線
+- [ ] Pipe / back-row threat
+- [ ] Setter 前後排與攻擊選項限制
+- [ ] 攻擊手 approach timing 個體化
+- [ ] Setter dump
+- [ ] 雙人攔網 closing / seam 判斷
+- [ ] 歷史訓練紀錄與弱點統計

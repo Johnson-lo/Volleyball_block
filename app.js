@@ -24,9 +24,10 @@ const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x07101a);
 scene.fog=new THREE.Fog(0x07101a,16,34);
 
-const camera=new THREE.PerspectiveCamera(48,16/9,.1,100);
-camera.position.set(0,2.25,8.7);
-camera.lookAt(0,1.7,-3.2);
+const camera=new THREE.PerspectiveCamera(52,16/9,.1,100);
+const cameraHome=new THREE.Vector3(0,2.08,2.45);
+camera.position.copy(cameraHome);
+camera.lookAt(0,1.95,-4.8);
 
 scene.add(new THREE.HemisphereLight(0xe7f2ff,0x1e2530,2.2));
 const keyLight=new THREE.DirectionalLight(0xffffff,2.2);
@@ -68,9 +69,9 @@ function makePlayer(label,color){
   root.userData={body,head,leftArm,rightArm,leftHand,rightHand,label,baseX:0,baseZ:0,phase:0};
   return root;
 }
-const oh=makePlayer("OH",0x6c7fd0),mb=makePlayer("MB",0x6c7fd0),opp=makePlayer("OPP",0x6c7fd0),setter=makePlayer("S",0xf2cf63),you=makePlayer("YOU",0x58d2a4);
-oh.position.set(-3.0,0,-7.2);mb.position.set(0,0,-6.3);opp.position.set(3.0,0,-7.2);setter.position.set(.35,0,-3.7);you.position.set(0,0,3.2);
-[oh,mb,opp,setter,you].forEach(p=>{p.userData.baseX=p.position.x;p.userData.baseZ=p.position.z;scene.add(p)});
+const oh=makePlayer("OH",0x6c7fd0),mb=makePlayer("MB",0x6c7fd0),opp=makePlayer("OPP",0x6c7fd0),setter=makePlayer("S",0xf2cf63);
+oh.position.set(-3.0,0,-7.2);mb.position.set(0,0,-6.3);opp.position.set(3.0,0,-7.2);setter.position.set(.35,0,-3.7);
+[oh,mb,opp,setter].forEach(p=>{p.userData.baseX=p.position.x;p.userData.baseZ=p.position.z;scene.add(p)});
 
 const ball=new THREE.Mesh(new THREE.SphereGeometry(.18,20,14),new THREE.MeshStandardMaterial({color:0xf8f6df,roughness:.55}));
 ball.position.set(.2,2.4,-4.1);ball.castShadow=true;scene.add(ball);
@@ -119,9 +120,18 @@ function animateScene(dt){
     const fakeDir=anim.fake==="left"?-.55:anim.fake==="right"?.55:0;
     setter.rotation.y=lerp(fakeDir,0,Math.max(0,(t-.45)/.45));
     setter.userData.head.rotation.y=fakeDir*1.25*(1-Math.min(1,t/.9));
-    setter.userData.leftArm.rotation.z=-.25-.55*Math.min(1,t/.75);
-    setter.userData.rightArm.rotation.z=.25+.55*Math.min(1,t/.75);
-    ball.position.y=2.4+Math.sin(Math.min(1,t/.75)*Math.PI)*.65;
+    const armRaise=Math.min(1,t/.72);
+    setter.userData.leftArm.rotation.z=-.25-.88*armRaise;
+    setter.userData.rightArm.rotation.z=.25+.88*armRaise;
+    const wristLate=Math.max(0,Math.min(1,(t-.62)/.22));
+    const wristDir=anim.target==="left"?-.7:anim.target==="right"?.7:0;
+    setter.userData.leftHand.rotation.y=wristDir*wristLate;
+    setter.userData.rightHand.rotation.y=wristDir*wristLate;
+    setter.userData.leftHand.rotation.z=wristDir*.28*wristLate;
+    setter.userData.rightHand.rotation.z=wristDir*.28*wristLate;
+    ball.position.x=setter.position.x;
+    ball.position.z=setter.position.z-.05;
+    ball.position.y=setter.position.y+2.38+Math.sin(Math.min(1,t/.75)*Math.PI)*.16;
   }
   if(anim.phase==="release"){
     const p=Math.min(1,(t-anim.releaseT)/.46);

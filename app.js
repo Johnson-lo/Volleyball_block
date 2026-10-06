@@ -1,257 +1,569 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.167.1/build/three.module.js";
 
-const cfgs={
-  read:{windowMs:1350,cueLead:650},
-  match:{windowMs:950,cueLead:520},
-  elite:{windowMs:700,cueLead:420}
+const SETTINGS = {
+  read:  { windowMs: 900 },
+  match: { windowMs: 650 },
+  elite: { windowMs: 450 }
 };
-const deceptionChance={low:.2,medium:.48,high:.72};
-const labels={left:"4 號位",middle:"Quick",right:"2 號位"};
-const el=id=>document.getElementById(id);
-const startBtn=el("startBtn"),difficulty=el("difficulty"),deception=el("deception"),roundCount=el("roundCount");
-const buttons=[...document.querySelectorAll(".decision-btn")];
+const DECEPTION = { low: .20, medium: .48, high: .72 };
+const LABELS = { left: "4 號位", middle: "Quick", right: "2 號位" };
+const el = id => document.getElementById(id);
+const startBtn = el("startBtn");
+const difficulty = el("difficulty");
+const deception = el("deception");
+const roundCount = el("roundCount");
+const buttons = [...document.querySelectorAll(".decision-btn")];
 
-let state={active:false,round:0,total:10,correct:0,score:0,rt:[],target:null,answered:false,startTs:0,timers:[],scenario:null};
+let state = {
+  active:false, round:0, total:10, correct:0, score:0, rt:[],
+  target:null, answered:false, decisionOpen:false, releaseAt:0,
+  scenario:null, timers:[]
+};
 
-const canvas=el("scene");
-const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:false});
-renderer.setPixelRatio(Math.min(devicePixelRatio,2));
-renderer.shadowMap.enabled=true;
-renderer.shadowMap.type=THREE.PCFSoftShadowMap;
-renderer.outputColorSpace=THREE.SRGBColorSpace;
+const canvas = el("scene");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-const scene=new THREE.Scene();
-scene.background=new THREE.Color(0x07101a);
-scene.fog=new THREE.Fog(0x07101a,16,34);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x07111d);
+scene.fog = new THREE.Fog(0x07111d, 17, 38);
 
-const camera=new THREE.PerspectiveCamera(52,16/9,.1,100);
-const cameraHome=new THREE.Vector3(0,2.08,2.45);
+const camera = new THREE.PerspectiveCamera(54, 16/9, .1, 100);
+const cameraHome = new THREE.Vector3(0, 2.12, 2.30);
 camera.position.copy(cameraHome);
-camera.lookAt(0,1.95,-4.8);
+camera.lookAt(0, 2.0, -5.3);
 
-scene.add(new THREE.HemisphereLight(0xe7f2ff,0x1e2530,2.2));
-const keyLight=new THREE.DirectionalLight(0xffffff,2.2);
-keyLight.position.set(-5,9,5);keyLight.castShadow=true;scene.add(keyLight);
+scene.add(new THREE.HemisphereLight(0xeaf4ff, 0x16202c, 2.35));
+const keyLight = new THREE.DirectionalLight(0xffffff, 2.15);
+keyLight.position.set(-4.5, 9, 4);
+keyLight.castShadow = true;
+scene.add(keyLight);
 
-const floor=new THREE.Mesh(
-  new THREE.PlaneGeometry(18,28),
-  new THREE.MeshStandardMaterial({color:0xb86f3f,roughness:.86,metalness:0})
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(18, 30),
+  new THREE.MeshStandardMaterial({ color:0xbb7547, roughness:.9 })
 );
-floor.rotation.x=-Math.PI/2;floor.position.z=-4;floor.receiveShadow=true;scene.add(floor);
+floor.rotation.x = -Math.PI/2;
+floor.position.z = -4;
+floor.receiveShadow = true;
+scene.add(floor);
 
-function line(x1,z1,x2,z2,color=0xffffff,opacity=.75){
-  const g=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x1,.012,z1),new THREE.Vector3(x2,.012,z2)]);
-  const m=new THREE.LineBasicMaterial({color,transparent:true,opacity});
+function addLine(x1,z1,x2,z2,opacity=.72){
+  const g = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(x1,.012,z1), new THREE.Vector3(x2,.012,z2)
+  ]);
+  const m = new THREE.LineBasicMaterial({ color:0xffffff, transparent:true, opacity });
   scene.add(new THREE.Line(g,m));
 }
-for(const x of [-4.5,4.5]) line(x,-13,x,5.5);
-line(-4.5,5.5,4.5,5.5);line(-4.5,-13,4.5,-13);line(-4.5,-3.5,4.5,-3.5,0xffffff,.5);
+[-4.5,4.5].forEach(x => addLine(x,-13,x,5.5));
+addLine(-4.5,-13,4.5,-13);
+addLine(-4.5,5.5,4.5,5.5);
+addLine(-4.5,-3.5,4.5,-3.5,.48);
 
-const netMat=new THREE.MeshStandardMaterial({color:0xe7edf6,transparent:true,opacity:.4,wireframe:true});
-const net=new THREE.Mesh(new THREE.PlaneGeometry(9,2.35,18,5),netMat);
-net.position.set(0,1.55,0);scene.add(net);
-const tape=new THREE.Mesh(new THREE.BoxGeometry(9,.07,.07),new THREE.MeshStandardMaterial({color:0xf7fbff}));
-tape.position.set(0,2.72,0);scene.add(tape);
+const net = new THREE.Mesh(
+  new THREE.PlaneGeometry(9,2.35,20,5),
+  new THREE.MeshStandardMaterial({ color:0xeaf0f7, transparent:true, opacity:.34, wireframe:true })
+);
+net.position.set(0,1.55,0);
+scene.add(net);
 
-function makePlayer(label,color){
-  const root=new THREE.Group();
-  const mat=new THREE.MeshStandardMaterial({color,roughness:.7});
-  const dark=new THREE.MeshStandardMaterial({color:0x202a3c,roughness:.8});
-  const skin=new THREE.MeshStandardMaterial({color:0xe1b497,roughness:.9});
-  const body=new THREE.Mesh(new THREE.CapsuleGeometry(.34,.78,5,10),mat);body.position.y=1.15;body.castShadow=true;root.add(body);
-  const head=new THREE.Mesh(new THREE.SphereGeometry(.24,18,12),skin);head.position.y=2.02;head.castShadow=true;root.add(head);
-  const lLeg=new THREE.Mesh(new THREE.CylinderGeometry(.1,.12,.75,10),dark);lLeg.position.set(-.16,.43,0);root.add(lLeg);
-  const rLeg=lLeg.clone();rLeg.position.x=.16;root.add(rLeg);
-  const leftArm=new THREE.Mesh(new THREE.CylinderGeometry(.075,.095,.72,10),skin);leftArm.position.set(-.42,1.35,0);leftArm.rotation.z=-.25;root.add(leftArm);
-  const rightArm=leftArm.clone();rightArm.position.x=.42;rightArm.rotation.z=.25;root.add(rightArm);
-  const leftHand=new THREE.Mesh(new THREE.BoxGeometry(.16,.18,.12),skin);leftHand.position.set(-.42,.96,0);root.add(leftHand);
-  const rightHand=leftHand.clone();rightHand.position.x=.42;root.add(rightHand);
-  root.userData={body,head,leftArm,rightArm,leftHand,rightHand,label,baseX:0,baseZ:0,phase:0};
+const tape = new THREE.Mesh(
+  new THREE.BoxGeometry(9,.065,.065),
+  new THREE.MeshStandardMaterial({ color:0xffffff })
+);
+tape.position.set(0,2.72,0);
+scene.add(tape);
+
+function limb(radius,length,material){
+  const mesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius*.88,radius,length,10),
+    material
+  );
+  mesh.castShadow = true;
+  return mesh;
+}
+
+function makeHuman(color, setterRole=false){
+  const root = new THREE.Group();
+  const jersey = new THREE.MeshStandardMaterial({ color, roughness:.72 });
+  const shorts = new THREE.MeshStandardMaterial({ color:0x202a3b, roughness:.82 });
+  const skin = new THREE.MeshStandardMaterial({ color:0xdfb08f, roughness:.9 });
+  const shoe = new THREE.MeshStandardMaterial({ color:0x10151f, roughness:.82 });
+
+  const hips = new THREE.Mesh(new THREE.BoxGeometry(.52,.28,.30), shorts);
+  hips.position.y = .92;
+  root.add(hips);
+
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(.68,.84,.34), jersey);
+  torso.position.y = 1.46;
+  torso.castShadow = true;
+  root.add(torso);
+
+  const neck = limb(.09,.16,skin);
+  neck.position.y = 1.97;
+  root.add(neck);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(.235,20,14), skin);
+  head.scale.set(.92,1.08,.95);
+  head.position.y = 2.17;
+  head.castShadow = true;
+  root.add(head);
+
+  function makeLeg(side){
+    const hip = new THREE.Group();
+    hip.position.set(side*.18,.82,0);
+    const thigh = limb(.115,.62,skin);
+    thigh.position.y = -.31;
+    hip.add(thigh);
+
+    const knee = new THREE.Group();
+    knee.position.y = -.62;
+    hip.add(knee);
+
+    const shin = limb(.095,.58,skin);
+    shin.position.y = -.29;
+    knee.add(shin);
+
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(.20,.12,.36),shoe);
+    foot.position.set(0,-.62,.08);
+    foot.castShadow = true;
+    knee.add(foot);
+    root.add(hip);
+    return { hip,knee,thigh,shin,foot };
+  }
+
+  function makeArm(side){
+    const shoulder = new THREE.Group();
+    shoulder.position.set(side*.43,1.76,0);
+
+    const upper = limb(.085,.49,skin);
+    upper.position.y = -.245;
+    shoulder.add(upper);
+
+    const elbow = new THREE.Group();
+    elbow.position.y = -.49;
+    shoulder.add(elbow);
+
+    const fore = limb(.072,.46,skin);
+    fore.position.y = -.23;
+    elbow.add(fore);
+
+    const wrist = new THREE.Group();
+    wrist.position.y = -.46;
+    elbow.add(wrist);
+
+    const hand = new THREE.Mesh(new THREE.BoxGeometry(.15,.20,.10),skin);
+    hand.position.y = -.10;
+    hand.castShadow = true;
+    wrist.add(hand);
+
+    root.add(shoulder);
+    return { shoulder, elbow, wrist, hand };
+  }
+
+  const leftLeg = makeLeg(-1), rightLeg = makeLeg(1);
+  const leftArm = makeArm(-1), rightArm = makeArm(1);
+
+  root.userData = {
+    torso,head,hips,leftLeg,rightLeg,leftArm,rightArm,setterRole,
+    base:new THREE.Vector3(), start:new THREE.Vector3(), attack:new THREE.Vector3()
+  };
   return root;
 }
-const oh=makePlayer("OH",0x6c7fd0),mb=makePlayer("MB",0x6c7fd0),opp=makePlayer("OPP",0x6c7fd0),setter=makePlayer("S",0xf2cf63);
-oh.position.set(-3.0,0,-7.2);mb.position.set(0,0,-6.3);opp.position.set(3.0,0,-7.2);setter.position.set(.35,0,-3.7);
-[oh,mb,opp,setter].forEach(p=>{p.userData.baseX=p.position.x;p.userData.baseZ=p.position.z;scene.add(p)});
 
-const ball=new THREE.Mesh(new THREE.SphereGeometry(.18,20,14),new THREE.MeshStandardMaterial({color:0xf8f6df,roughness:.55}));
-ball.position.set(.2,2.4,-4.1);ball.castShadow=true;scene.add(ball);
+const oh = makeHuman(0x5e76cf);
+const mb = makeHuman(0x5e76cf);
+const opp = makeHuman(0x5e76cf);
+const setter = makeHuman(0xe0bb4f,true);
+scene.add(oh,mb,opp,setter);
 
-let anim={t:0,phase:"idle",target:"middle",fake:"none",decoy:"none",pass:"A",releaseT:0,commitX:0};
+const ball = new THREE.Mesh(
+  new THREE.SphereGeometry(.18,24,18),
+  new THREE.MeshStandardMaterial({ color:0xf7f2dc, roughness:.5 })
+);
+ball.castShadow = true;
+scene.add(ball);
+
+const anim = {
+  t:0, phase:"idle", scenario:null, releaseT:0, releaseStarted:false,
+  releaseFrom:new THREE.Vector3(), commitX:0
+};
 
 function resize(){
-  const rect=canvas.getBoundingClientRect();
-  const w=Math.max(1,Math.floor(rect.width)),h=Math.max(1,Math.floor(rect.height));
-  if(canvas.width!==w*renderer.getPixelRatio()||canvas.height!==h*renderer.getPixelRatio()){
-    renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(1,Math.floor(rect.width));
+  const h = Math.max(1,Math.floor(rect.height));
+  const pr = renderer.getPixelRatio();
+  if(canvas.width !== Math.floor(w*pr) || canvas.height !== Math.floor(h*pr)){
+    renderer.setSize(w,h,false);
+    camera.aspect = w/h;
+    camera.updateProjectionMatrix();
   }
 }
-function lerp(a,b,t){return a+(b-a)*t}
-function smooth(t){return t*t*(3-2*t)}
-function resetPlayers(){
-  for(const p of [oh,mb,opp,setter]){
-    p.position.x=p.userData.baseX;p.position.z=p.userData.baseZ;p.position.y=0;p.rotation.set(0,0,0);
-    p.userData.head.rotation.set(0,0,0);p.userData.leftArm.rotation.set(0,0,-.25);p.userData.rightArm.rotation.set(0,0,.25);p.userData.leftHand.rotation.set(0,0,0);p.userData.rightHand.rotation.set(0,0,0);
-  }
-  ball.position.set(.2,2.4,-4.1);
-}
-function approach(p,dx,dz,k,jump=0){
-  const s=smooth(Math.min(1,k));
-  p.position.x=p.userData.baseX+dx*s;p.position.z=p.userData.baseZ+dz*s;
-  p.position.y=Math.sin(Math.PI*Math.min(1,Math.max(0,(k-.65)/.35)))*jump;
-}
-function animateScene(dt){
-  anim.t+=dt;
-  const t=anim.t;
-  if(anim.phase==="reading"){
-    const cue=Math.min(1,t/1.0);
-    const sc=state.scenario||{};
-    const jumpP=Math.max(0,Math.min(1,(t-.28)/.62));
-    setter.position.y=(sc.jumpSet?0.62:0.12)*Math.sin(Math.PI*jumpP);
-    // all attackers show credible movement
-    approach(oh,.35,1.45,cue,0);
-    approach(mb,anim.target==="middle"?.2:.08,1.8,cue,0);
-    approach(opp,-.35,1.45,cue,0);
-    // decoy gets stronger and slightly earlier
-    if(anim.decoy==="left") approach(oh,.7,2.0,Math.min(1,cue*1.18),.15);
-    if(anim.decoy==="middle") approach(mb,.12,2.2,Math.min(1,cue*1.2),.15);
-    if(anim.decoy==="right") approach(opp,-.7,2.0,Math.min(1,cue*1.18),.15);
 
-    // setter fake cue: head and shoulder point one way, then neutralize
-    const fakeDir=anim.fake==="left"?-.55:anim.fake==="right"?.55:0;
-    setter.rotation.y=lerp(fakeDir,0,Math.max(0,(t-.45)/.45));
-    setter.userData.head.rotation.y=fakeDir*1.25*(1-Math.min(1,t/.9));
-    const armRaise=Math.min(1,t/.72);
-    setter.userData.leftArm.rotation.z=-.25-.88*armRaise;
-    setter.userData.rightArm.rotation.z=.25+.88*armRaise;
-    const wristLate=Math.max(0,Math.min(1,(t-.62)/.22));
-    const wristDir=anim.target==="left"?-.7:anim.target==="right"?.7:0;
-    setter.userData.leftHand.rotation.y=wristDir*wristLate;
-    setter.userData.rightHand.rotation.y=wristDir*wristLate;
-    setter.userData.leftHand.rotation.z=wristDir*.28*wristLate;
-    setter.userData.rightHand.rotation.z=wristDir*.28*wristLate;
+function clamp01(v){ return Math.max(0,Math.min(1,v)); }
+function smooth(v){ v=clamp01(v); return v*v*(3-2*v); }
+function lerp(a,b,t){ return a+(b-a)*t; }
+function rand(a,b){ return a+Math.random()*(b-a); }
+
+function resetPose(p){
+  p.position.copy(p.userData.start);
+  p.rotation.set(0,0,0);
+  p.userData.head.rotation.set(0,0,0);
+  [p.userData.leftArm,p.userData.rightArm].forEach((a,i)=>{
+    a.shoulder.rotation.set(0,0,i===0?-.16:.16);
+    a.elbow.rotation.set(0,0,0);
+    a.wrist.rotation.set(0,0,0);
+  });
+  [p.userData.leftLeg,p.userData.rightLeg].forEach(l=>{
+    l.hip.rotation.set(0,0,0);
+    l.knee.rotation.set(0,0,0);
+  });
+}
+
+function setSetterArms(raise,wristDir){
+  const L=setter.userData.leftArm, R=setter.userData.rightArm;
+  const r=smooth(raise);
+  L.shoulder.rotation.z=lerp(-.16,Math.PI-.26,r);
+  R.shoulder.rotation.z=lerp(.16,-Math.PI+.26,r);
+  L.shoulder.rotation.x=lerp(0,.08,r);
+  R.shoulder.rotation.x=lerp(0,.08,r);
+  L.elbow.rotation.x=lerp(0,-.18,r);
+  R.elbow.rotation.x=lerp(0,-.18,r);
+  L.wrist.rotation.y=wristDir*.46*r;
+  R.wrist.rotation.y=wristDir*.46*r;
+  L.wrist.rotation.z=wristDir*.18*r;
+  R.wrist.rotation.z=wristDir*.18*r;
+}
+
+function placeFormation(sc){
+  oh.userData.start.set(rand(-4.2,-3.2),0,rand(-8.7,-7.0));
+  opp.userData.start.set(rand(3.1,4.2),0,rand(-8.7,-7.0));
+  mb.userData.start.set(rand(-.65,.65),0,rand(-7.5,-6.1));
+  setter.userData.start.set(sc.setterStartX,0,sc.setterStartZ);
+
+  oh.userData.attack.set(rand(-3.65,-2.75),0,rand(-4.85,-4.05));
+  opp.userData.attack.set(rand(2.75,3.65),0,rand(-4.85,-4.05));
+
+  const quickOffset = sc.quickRoute==="A" ? rand(-.20,.18)
+                    : sc.quickRoute==="B" ? rand(-1.15,-.62)
+                    : rand(.55,1.05);
+  mb.userData.attack.set(sc.setterX+quickOffset,0,sc.setterZ-.92);
+
+  setter.userData.attack.set(sc.setterX,0,sc.setterZ);
+
+  [oh,mb,opp,setter].forEach(resetPose);
+
+  ball.position.set(sc.passStartX,1.45,-10.5);
+  camera.position.copy(cameraHome);
+  camera.lookAt(0,2.0,-5.3);
+  anim.commitX=0;
+}
+
+function runCycle(player,progress){
+  const p=clamp01(progress);
+  const stride=Math.sin(p*Math.PI*4)*.16*(1-p*.25);
+  player.userData.leftArm.shoulder.rotation.x=stride;
+  player.userData.rightArm.shoulder.rotation.x=-stride;
+  player.userData.leftLeg.hip.rotation.x=-stride*.9;
+  player.userData.rightLeg.hip.rotation.x=stride*.9;
+}
+
+function approach(player,progress,jumpHeight=.55){
+  const p=smooth(progress);
+  player.position.x=lerp(player.userData.start.x,player.userData.attack.x,p);
+  player.position.z=lerp(player.userData.start.z,player.userData.attack.z,p);
+  runCycle(player,p);
+  const jp=clamp01((progress-.72)/.28);
+  player.position.y=Math.sin(Math.PI*jp)*jumpHeight;
+}
+
+function quadraticBezier(a,b,c,t,out){
+  const u=1-t;
+  out.set(
+    u*u*a.x+2*u*t*b.x+t*t*c.x,
+    u*u*a.y+2*u*t*b.y+t*t*c.y,
+    u*u*a.z+2*u*t*b.z+t*t*c.z
+  );
+  return out;
+}
+
+const tempVec=new THREE.Vector3();
+
+function openDecision(){
+  if(!state.active || state.answered || state.decisionOpen) return;
+  state.decisionOpen=true;
+  state.releaseAt=performance.now();
+  buttons.forEach(b=>b.disabled=false);
+  el("phaseLabel").textContent="Ball released";
+  el("centerCue").textContent="球已離手：現在判斷";
+  el("feedback").className="feedback";
+  el("feedback").textContent="現在才開始計時。讀球離手後的方向、速度，以及三個攻擊手的相對位置。";
+
+  const sc=state.scenario;
+  const base=SETTINGS[difficulty.value].windowMs;
+  const limit=sc.target==="middle" ? Math.min(base,520) : base;
+  state.timers.push(setTimeout(()=>{ if(!state.answered) submit(null); },limit));
+}
+
+function animatePreRelease(sc,t){
+  const passP=clamp01(t/.55);
+  const setterMove=smooth(clamp01((t-.15)/.42));
+
+  setter.position.x=lerp(sc.setterStartX,sc.setterX,setterMove);
+  setter.position.z=lerp(sc.setterStartZ,sc.setterZ,setterMove);
+
+  if(t<.60){
+    ball.position.x=lerp(sc.passStartX,setter.position.x,passP);
+    ball.position.z=lerp(-10.5,setter.position.z,passP);
+    ball.position.y=1.45+Math.sin(Math.PI*passP)*2.25;
+  }
+
+  const ohP=clamp01((t-sc.ohOn)/.86);
+  const mbP=clamp01((t-sc.mbOn)/.78);
+  const opP=clamp01((t-sc.oppOn)/.86);
+  approach(oh,ohP,.28);
+  approach(mb,mbP,.34);
+  approach(opp,opP,.28);
+
+  const fakeDir=sc.fake==="left"?-.55:sc.fake==="right"?.55:0;
+  const fakeFade=1-smooth(clamp01((t-.46)/.33));
+  setter.rotation.y=fakeDir*fakeFade;
+  setter.userData.head.rotation.y=fakeDir*1.1*fakeFade;
+
+  const jumpP=clamp01((t-.36)/.60);
+  setter.position.y=(sc.jumpSet?.58:.10)*Math.sin(Math.PI*jumpP);
+
+  const raise=clamp01((t-.28)/.50);
+  const wristDir=sc.target==="left"?-.35:sc.target==="right"?.35:0;
+  const wristLate=smooth(clamp01((t-.72)/.18));
+  setSetterArms(raise,wristDir*wristLate);
+
+  if(t>=.48){
     ball.position.x=setter.position.x;
-    ball.position.z=setter.position.z-.05;
-    ball.position.y=setter.position.y+2.38+Math.sin(Math.min(1,t/.75)*Math.PI)*.16;
+    ball.position.z=setter.position.z-.04;
+    ball.position.y=setter.position.y+2.42;
   }
-  if(anim.phase==="release"){
-    const p=Math.min(1,(t-anim.releaseT)/.46);
-    const s=smooth(p);
-    let tx=0,tz=-6.0,ty=3.3;
-    if(anim.target==="left"){tx=-3.0;tz=-7.0;ty=3.25}
-    if(anim.target==="middle"){tx=0;tz=-5.4;ty=3.35}
-    if(anim.target==="right"){tx=3.0;tz=-7.0;ty=3.25}
-    ball.position.x=lerp(.2,tx,s);ball.position.z=lerp(-4.1,tz,s);ball.position.y=2.45+2.0*Math.sin(Math.PI*p);
-    const hitter=anim.target==="left"?oh:anim.target==="middle"?mb:opp;
-    approach(hitter,anim.target==="left"?.8:anim.target==="right"?-.8:.15,2.5,1,.7*Math.sin(Math.PI*p));
-  }
-}
-let last=performance.now();
-function render(now){
-  const dt=Math.min(.033,(now-last)/1000);last=now;resize();animateScene(dt);renderer.render(scene,camera);requestAnimationFrame(render);
-}
-requestAnimationFrame(render);
 
-function clearTimers(){state.timers.forEach(clearTimeout);state.timers=[]}
-function addTimer(fn,ms){const id=setTimeout(fn,ms);state.timers.push(id);return id}
+  if(t>=sc.releaseTime && !anim.releaseStarted){
+    anim.releaseStarted=true;
+    anim.releaseT=t;
+    anim.releaseFrom.copy(ball.position);
+    anim.phase="postRelease";
+    openDecision();
+  }
+}
+
+function animatePostRelease(sc,t){
+  const elapsed=t-anim.releaseT;
+  const flight=sc.target==="middle" ? .38 : .62;
+  const p=clamp01(elapsed/flight);
+
+  let target;
+  if(sc.target==="left") target=oh.userData.attack;
+  else if(sc.target==="right") target=opp.userData.attack;
+  else target=mb.userData.attack;
+
+  const end=new THREE.Vector3(target.x,sc.target==="middle"?3.20:3.28,target.z);
+  const apex=new THREE.Vector3(
+    (anim.releaseFrom.x+end.x)/2,
+    Math.max(anim.releaseFrom.y,end.y)+(sc.target==="middle"?.42:1.45),
+    (anim.releaseFrom.z+end.z)/2
+  );
+  quadraticBezier(anim.releaseFrom,apex,end,smooth(p),tempVec);
+  ball.position.copy(tempVec);
+
+  const hitter=sc.target==="left"?oh:sc.target==="right"?opp:mb;
+  const hitJump=clamp01((p-.45)/.55);
+  hitter.position.y=Math.max(hitter.position.y,Math.sin(Math.PI*hitJump)*.72);
+
+  if(state.answered){
+    const camP=smooth(clamp01(elapsed/.24));
+    camera.position.x=lerp(cameraHome.x,anim.commitX,camP);
+    camera.lookAt(anim.commitX*.12,2.05,-5.3);
+  }
+}
+
+let last=performance.now();
+function frame(now){
+  const dt=Math.min(.033,(now-last)/1000);
+  last=now;
+  resize();
+  anim.t+=dt;
+  if(anim.scenario){
+    if(anim.phase==="preRelease") animatePreRelease(anim.scenario,anim.t);
+    if(anim.phase==="postRelease") animatePostRelease(anim.scenario,anim.t);
+  }
+  renderer.render(scene,camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+function clearTimers(){
+  state.timers.forEach(clearTimeout);
+  state.timers=[];
+}
+
 function weightedTarget(pass){
   const r=Math.random();
-  if(pass==="A") return r<.35?"middle":r<.675?"left":"right";
-  if(pass==="B") return r<.16?"middle":r<.58?"left":"right";
+  if(pass==="A") return r<.36?"middle":r<.68?"left":"right";
+  if(pass==="B") return r<.18?"middle":r<.59?"left":"right";
   return r<.5?"left":"right";
 }
+
 function createScenario(){
-  const pass=Math.random()<.46?"A":Math.random()<.75?"B":"C";
+  const r=Math.random();
+  const pass=r<.46?"A":r<.78?"B":"C";
   const target=weightedTarget(pass);
-  const fakeEnabled=Math.random()<deceptionChance[deception.value];
-  const wrongs=["left","middle","right"].filter(x=>x!==target && !(pass==="C"&&x==="middle"));
-  const fake=fakeEnabled?wrongs[Math.floor(Math.random()*wrongs.length)]:"none";
-  let decoy="none";
-  if(Math.random()<deceptionChance[deception.value]){
-    const d=["left","middle","right"].filter(x=>x!==target && !(pass==="C"&&x==="middle"));
-    decoy=d[Math.floor(Math.random()*d.length)]||"none";
-  }
   const quickRoute=["A","B","C"][Math.floor(Math.random()*3)];
-  const sx=pass==="A"?(Math.random()-.5)*.5:(Math.random()-.5)*(pass==="B"?1.0:1.6);
-  const ohShift=(Math.random()-.5)*1.0, oppShift=(Math.random()-.5)*1.0, mbShift=(Math.random()-.5)*.8;
-  return {pass,target,fake,decoy,quickRoute,sx,ohShift,oppShift,mbShift,jumpSet:pass!=="C"||Math.random()<.45};
+  const setterX=pass==="A"?rand(-.30,.30):pass==="B"?rand(-.65,.65):rand(-1.0,1.0);
+  const setterZ=pass==="A"?rand(-3.82,-3.48):pass==="B"?rand(-4.15,-3.60):rand(-4.70,-3.85);
+  const wrongs=["left","middle","right"].filter(x=>x!==target && !(pass==="C"&&x==="middle"));
+  const fake=Math.random()<DECEPTION[deception.value] && wrongs.length
+    ? wrongs[Math.floor(Math.random()*wrongs.length)]
+    : "none";
+
+  let ohOn=rand(.18,.34), mbOn=rand(.14,.30), oppOn=rand(.18,.34);
+  if(fake==="left") ohOn=Math.max(.08,ohOn-.10);
+  if(fake==="middle") mbOn=Math.max(.06,mbOn-.10);
+  if(fake==="right") oppOn=Math.max(.08,oppOn-.10);
+  if(pass==="A" && target!=="middle") mbOn=Math.min(mbOn,.16);
+
+  return {
+    pass,target,quickRoute,fake,
+    setterX,setterZ,
+    setterStartX:setterX+rand(-.50,.50),
+    setterStartZ:setterZ+rand(-.35,.45),
+    passStartX:rand(-2.3,2.3),
+    jumpSet:pass!=="C"||Math.random()<.42,
+    ohOn,mbOn,oppOn,
+    releaseTime:1.00
+  };
 }
+
 function updateStats(){
   el("roundStat").textContent=`${state.round} / ${state.total}`;
   el("accuracyStat").textContent=state.round?`${Math.round(state.correct/state.round*100)}%`:"—";
   el("rtStat").textContent=state.rt.length?`${Math.round(state.rt.reduce((a,b)=>a+b,0)/state.rt.length)} ms`:"—";
   el("scoreStat").textContent=state.score;
 }
-function infoForScenario(sc){
-  el("passThreat").textContent=sc.pass==="A"?"3 點威脅":sc.pass==="B"?"快攻降低":"主要兩側";
-  el("setterFake").textContent=sc.fake==="none"?"低":"有";
-  el("decoyInfo").textContent=sc.decoy==="none"?"無":labels[sc.decoy];
-}
+
 function nextRound(){
   clearTimers();
-  if(state.round>=state.total){finish();return}
-  resetPlayers();anim.t=0;anim.phase="reading";
-  state.round++;state.answered=false;state.startTs=0;buttons.forEach(b=>b.disabled=false);
-  const sc=createScenario();state.scenario=sc;state.target=sc.target;
-  anim.target=sc.target;anim.fake=sc.fake;anim.decoy=sc.decoy;anim.pass=sc.pass;
+  if(state.round>=state.total){ finish(); return; }
+
+  state.round++;
+  state.answered=false;
+  state.decisionOpen=false;
+  state.releaseAt=0;
+  buttons.forEach(b=>b.disabled=true);
+
+  const sc=createScenario();
+  state.scenario=sc;
+  state.target=sc.target;
+
+  anim.scenario=sc;
+  anim.t=0;
+  anim.phase="preRelease";
+  anim.releaseStarted=false;
+  placeFormation(sc);
+
   el("passLabel").textContent=sc.pass==="A"?"A｜到位":sc.pass==="B"?"B｜稍離網":"C｜離網";
-  el("phaseLabel").textContent="Read cues";el("windowLabel").textContent=`${cfgs[difficulty.value].windowMs} ms`;
-  el("centerCue").textContent="看相對位置 → 跳舉 → 手腕";
-  el("feedback").className="feedback";el("feedback").textContent="相機就是你的眼睛；看 setter 是否跳舉、最後手腕平面，以及 OH / MB / OPP 的相對位置變化。";
-  infoForScenario(sc);
-  const c=cfgs[difficulty.value];
-  addTimer(()=>{
-    state.startTs=performance.now();
-    el("phaseLabel").textContent="Decision";
-    el("centerCue").textContent="現在做第一步判斷";
-  },c.cueLead);
-  addTimer(()=>{if(!state.answered)submit(null)},c.cueLead+c.windowMs);
+  el("phaseLabel").textContent="Before release";
+  el("windowLabel").textContent="出手後";
+  el("centerCue").textContent="先讀，不作答";
+  el("feedback").className="feedback";
+  el("feedback").textContent="出手前只看資訊：接發、setter 跳舉、攻擊手助跑與相對位置。球離手後才可以作答。";
+  el("passThreat").textContent=sc.pass==="A"?"3 點威脅":sc.pass==="B"?"快攻降低":"主要兩側";
+  el("setterFake").textContent=sc.fake==="none"?"無明顯假身體":"可能有假身體";
+  el("decoyInfo").textContent="每球位置不同";
+  updateStats();
 }
+
 function submit(choice){
-  if(!state.active||state.answered)return;
-  state.answered=true;clearTimers();buttons.forEach(b=>b.disabled=true);
-  const rt=state.startTs?Math.max(0,Math.round(performance.now()-state.startTs)):0;
-  if(rt)state.rt.push(rt);
+  if(!state.active || state.answered) return;
+
+  if(!state.decisionOpen){
+    el("feedback").className="feedback early";
+    el("feedback").textContent="還沒出手。這個版本不接受預猜；等球真正離開 setter 手後再判斷。";
+    return;
+  }
+
+  state.answered=true;
+  clearTimers();
+  buttons.forEach(b=>b.disabled=true);
+
+  const rt=Math.max(0,Math.round(performance.now()-state.releaseAt));
+  state.rt.push(rt);
   const ok=choice===state.target;
-  const early=rt>0&&rt<220;
+
   let gain=0;
   if(ok){
     state.correct++;
-    if(early) gain=25;
-    else if(rt<=520) gain=100;
-    else if(rt<=850) gain=80;
-    else gain=60;
+    if(rt<=260) gain=100;
+    else if(rt<=450) gain=90;
+    else if(rt<=650) gain=75;
+    else gain=55;
     state.score+=gain;
   }
-  el("feedback").className=`feedback ${ok?(early?"early":"good"):"bad"}`;
-  el("feedback").textContent=ok
-    ?(early?`猜對但太早 commit：${labels[state.target]} · ${rt} ms · +${gain}`:`讀對：${labels[state.target]} · ${rt} ms · +${gain}`)
-    :`${choice===null?"時間到":"被假線索帶走"}：正解 ${labels[state.target]} ${rt?`· ${rt} ms`:""}`;
-  el("phaseLabel").textContent="Release";
-  el("centerCue").textContent=state.scenario.fake!=="none"?`Setter 假線索：${labels[state.scenario.fake]}`:"沒有明顯假肩";
+
   anim.commitX=choice==="left"?-1.0:choice==="right"?1.0:0;
-  anim.phase="release";anim.releaseT=anim.t;
+
+  const route=state.target==="middle" ? ` · ${state.scenario.quickRoute} 快` : "";
+  el("feedback").className=`feedback ${ok?"good":"bad"}`;
+  el("feedback").textContent=ok
+    ? `判斷正確：${LABELS[state.target]}${route} · 出手後 ${rt} ms · +${gain}`
+    : `${choice===null?"時間到":"判斷錯誤"}：正解 ${LABELS[state.target]}${route} · 出手後 ${rt} ms`;
+
+  el("phaseLabel").textContent="Read complete";
+  el("centerCue").textContent="繼續看完整球路";
   updateStats();
-  addTimer(nextRound,1100);
+
+  state.timers.push(setTimeout(nextRound,850));
 }
+
 function finish(){
-  state.active=false;startBtn.textContent="重新開始";buttons.forEach(b=>b.disabled=true);
+  state.active=false;
+  startBtn.textContent="重新開始";
+  buttons.forEach(b=>b.disabled=true);
+
   const acc=Math.round(state.correct/state.total*100);
   const avg=state.rt.length?Math.round(state.rt.reduce((a,b)=>a+b,0)/state.rt.length):0;
-  el("phaseLabel").textContent="Done";el("windowLabel").textContent="—";
-  el("feedback").className="feedback good";el("feedback").textContent=`完成：正確率 ${acc}% · 平均反應 ${avg||"—"} ms · Read score ${state.score}`;
-  const box=el("sessionResult");box.classList.remove("hidden");
-  box.innerHTML=`<strong>Session result</strong><p>Accuracy: ${acc}%<br>Average RT: ${avg||"—"} ms<br>Read score: ${state.score}</p><p>${acc>=80?"下一步可把欺騙強度調高。":"先把 Pass → Setter → Hitter 的讀取順序做穩。"}</p>`;
+  el("phaseLabel").textContent="Done";
+  el("windowLabel").textContent="—";
+  el("feedback").className="feedback good";
+  el("feedback").textContent=`完成：正確率 ${acc}% · 出手後平均反應 ${avg||"—"} ms · Read score ${state.score}`;
+
+  const box=el("sessionResult");
+  box.classList.remove("hidden");
+  box.innerHTML=`<strong>Session result</strong><p>Accuracy: ${acc}%<br>Post-release RT: ${avg||"—"} ms<br>Read score: ${state.score}</p>`;
 }
+
 function start(){
-  clearTimers();state={active:true,round:0,total:Number(roundCount.value),correct:0,score:0,rt:[],target:null,answered:false,startTs:0,timers:[],scenario:null};
-  startBtn.textContent="重置訓練";el("sessionResult").classList.add("hidden");updateStats();nextRound();
+  clearTimers();
+  state={
+    active:true,round:0,total:Number(roundCount.value),correct:0,score:0,rt:[],
+    target:null,answered:false,decisionOpen:false,releaseAt:0,scenario:null,timers:[]
+  };
+  startBtn.textContent="重置訓練";
+  el("sessionResult").classList.add("hidden");
+  updateStats();
+  nextRound();
 }
+
 startBtn.addEventListener("click",start);
 buttons.forEach(b=>b.addEventListener("click",()=>submit(b.dataset.choice)));
 document.addEventListener("keydown",e=>{
-  if(["INPUT","SELECT","TEXTAREA"].includes(document.activeElement?.tagName))return;
+  if(["INPUT","SELECT","TEXTAREA"].includes(document.activeElement?.tagName)) return;
   const map={ArrowLeft:"left",ArrowDown:"middle",ArrowRight:"right"};
-  if(map[e.key]){e.preventDefault();submit(map[e.key])}
+  if(map[e.key]){
+    e.preventDefault();
+    submit(map[e.key]);
+  }
 });
+
 buttons.forEach(b=>b.disabled=true);
 updateStats();
